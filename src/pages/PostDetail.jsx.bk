@@ -1,0 +1,60 @@
+import React, { useEffect, useState, useRef } from 'react';
+import { useParams } from 'react-router-dom';
+import api from '../api';
+import CommentList from '../components/CommentList';
+import CommentForm from '../components/CommentForm';
+import { io } from 'socket.io-client';
+import { useAuth } from '../AuthContext';
+
+export default function PostDetail() {
+  const { id } = useParams();
+  const [post, setPost] = useState(null);
+  const [comments, setComments] = useState([]);
+  const socketRef = useRef(null);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    const load = async () => {
+      const [pRes, cRes] = await Promise.all([api.get(`/posts/${id}`), api.get(`/comments/${id}`)]);
+      setPost(pRes.data);
+      setComments(cRes.data);
+    };
+    load();
+  }, [id]);
+
+  useEffect(() => {
+    socketRef.current = io(process.env.REACT_APP_API_URL || 'http://localhost:5000');
+    socketRef.current.emit('joinPost', id);
+
+    socketRef.current.on('newComment', (comment) => {
+      if (comment.postId === id || comment.postId === id.toString()) {
+        setComments(prev => [comment, ...prev]);
+      }
+    });
+
+    return () => {
+      socketRef.current.emit('leavePost', id);
+      socketRef.current.disconnect();
+    };
+  }, [id]);
+
+  const onAdd = (comment) => setComments(prev => [comment, ...prev]);
+
+  if (!post) return <div>Loading...</div>;
+
+  return (
+    <div>
+      <div style={{background:'#fff',padding:12,borderRadius:8,marginBottom:12}}>
+        <h2>{post.title}</h2>
+        <div style={{color:'#666',fontSize:13}}>By {post.authorId?.username}</div>
+        <p>{post.content}</p>
+      </div>
+
+      <div style={{background:'#fff',padding:12,borderRadius:8}}>
+        <h3>Comments</h3>
+        {user ? <CommentForm postId={id} onAdd={onAdd} /> : <div>Please login to comment</div>}
+        <CommentList comments={comments} />
+      </div>
+    </div>
+  );
+}
